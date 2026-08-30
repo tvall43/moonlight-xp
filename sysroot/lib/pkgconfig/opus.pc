@@ -1,0 +1,16 @@
+# Opus codec reference implementation pkg-config file
+
+prefix=/workspaces/moonlight-xp/sysroot
+exec_prefix=/workspaces/moonlight-xp/sysroot
+libdir=/workspaces/moonlight-xp/sysroot/lib
+includedir=/workspaces/moonlight-xp/sysroot/include
+
+Name: Opus
+Description: Opus IETF audio codec ( build)
+URL: https://opus-codec.org/
+Version: 1.4
+Requires:
+Conflicts:
+Libs: -L/workspaces/moonlight-xp/sysroot/lib -lopus
+Libs.private: -lm
+Cflags: -I/workspaces/moonlight-xp/sysroot/include/opus

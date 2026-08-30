@@ -1,0 +1,14 @@
+prefix=/workspaces/moonlight-xp/sysroot
+exec_prefix=${prefix}
+libdir=/workspaces/moonlight-xp/sysroot/lib
+includedir=/workspaces/moonlight-xp/sysroot/include
+
+Name: libavfilter
+Description: FFmpeg audio/video filtering library
+Version: 7.110.100
+Requires: libavutil >= 56.70.100
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavfilter -pthread -lm
+Libs.private: 
+Cflags: -I${includedir}

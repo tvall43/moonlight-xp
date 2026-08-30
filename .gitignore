@@ -1,0 +1,36 @@
+# Build directories
+build/
+bin/
+dist/*.exe
+
+# Object and binary files
+*.o
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.a.tmp
+
+# Moonlight runtime generated files
+moonlight.ini
+client.crt
+client.key
+
+# Heavy toolchains & external build source trees (sysroot contains all prebuilt libs)
+tools/
+third_party/ffmpeg/
+third_party/mbedtls/
+third_party/opus/
+
+# Screenshots and testing images
+Screenshot_*.png
+*.png
+
+# IDE / Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

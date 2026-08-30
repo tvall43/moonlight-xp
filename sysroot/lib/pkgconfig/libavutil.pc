@@ -1,0 +1,14 @@
+prefix=/workspaces/moonlight-xp/sysroot
+exec_prefix=${prefix}
+libdir=/workspaces/moonlight-xp/sysroot/lib
+includedir=/workspaces/moonlight-xp/sysroot/include
+
+Name: libavutil
+Description: FFmpeg utility library
+Version: 56.70.100
+Requires: 
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavutil -pthread -lm -luser32 -lbcrypt
+Libs.private: 
+Cflags: -I${includedir}

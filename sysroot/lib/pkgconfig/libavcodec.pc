@@ -1,0 +1,14 @@
+prefix=/workspaces/moonlight-xp/sysroot
+exec_prefix=${prefix}
+libdir=/workspaces/moonlight-xp/sysroot/lib
+includedir=/workspaces/moonlight-xp/sysroot/include
+
+Name: libavcodec
+Description: FFmpeg codec library
+Version: 58.134.100
+Requires: libavutil >= 56.70.100
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavcodec -pthread -lm -lole32 -luser32
+Libs.private: 
+Cflags: -I${includedir}
