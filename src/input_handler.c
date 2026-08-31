@@ -10,6 +10,7 @@
 static HWND g_StreamHwnd = NULL;
 static bool g_MouseCaptured = false;
 static POINT g_LastCursorPos = {0, 0};
+static bool g_SyntheticRecenter = false;
 static bool g_KeysDown[256] = {0};
 
 typedef DWORD (WINAPI *LPFN_XINPUTGETSTATE)(DWORD dwUserIndex, XINPUT_STATE* pState);
@@ -18,6 +19,8 @@ static HMODULE g_hXInput = NULL;
 
 void input_handler_init(HWND stream_hwnd) {
     g_StreamHwnd = stream_hwnd;
+    memset(g_KeysDown, 0, sizeof(g_KeysDown));
+    g_SyntheticRecenter = false;
 
     // Load XInput dynamically (supports XP with DirectX End-User Runtimes)
     g_hXInput = LoadLibraryA("xinput1_3.dll");
@@ -29,8 +32,21 @@ void input_handler_init(HWND stream_hwnd) {
     }
 }
 
+void input_handler_release_all_keys(void) {
+    for (int k = 0; k < 256; k++) {
+        if (g_KeysDown[k]) {
+            LiSendKeyboardEvent((short)k, KEY_ACTION_UP, 0);
+            g_KeysDown[k] = false;
+        }
+    }
+    LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_LEFT);
+    LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_RIGHT);
+    LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_MIDDLE);
+}
+
 void input_handler_destroy(void) {
     input_handler_set_capture(false);
+    input_handler_release_all_keys();
     if (g_hXInput) {
         FreeLibrary(g_hXInput);
         g_hXInput = NULL;
@@ -41,6 +57,7 @@ void input_handler_destroy(void) {
 void input_handler_set_capture(bool capture) {
     g_MouseCaptured = capture;
     if (capture && g_StreamHwnd) {
+        SetFocus(g_StreamHwnd);
         SetCapture(g_StreamHwnd);
         RECT rc;
         GetClientRect(g_StreamHwnd, &rc);
@@ -52,6 +69,7 @@ void input_handler_set_capture(bool capture) {
         ReleaseCapture();
         ClipCursor(NULL);
         ShowCursor(TRUE);
+        input_handler_release_all_keys();
     }
 }
 
@@ -66,8 +84,13 @@ static char get_active_modifiers(void) {
 
 bool input_handler_process_message(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
+    case WM_SETFOCUS:
+        SetFocus(hwnd);
+        return true;
+
     case WM_LBUTTONDOWN:
         {
+            SetFocus(hwnd);
             RECT rc;
             GetClientRect(hwnd, &rc);
             int width = rc.right - rc.left;
@@ -81,11 +104,14 @@ bool input_handler_process_message(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
             LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_LEFT);
         }
         return true;
+
     case WM_LBUTTONUP:
         LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_LEFT);
         return true;
+
     case WM_RBUTTONDOWN:
         {
+            SetFocus(hwnd);
             RECT rc;
             GetClientRect(hwnd, &rc);
             int width = rc.right - rc.left;
@@ -99,52 +125,73 @@ bool input_handler_process_message(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
             LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_RIGHT);
         }
         return true;
+
     case WM_RBUTTONUP:
         LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_RIGHT);
         return true;
+
     case WM_MBUTTONDOWN:
+        SetFocus(hwnd);
         if (!g_MouseCaptured) input_handler_set_capture(true);
         LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_MIDDLE);
         return true;
+
     case WM_MBUTTONUP:
         LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_MIDDLE);
         return true;
+
     case WM_XBUTTONDOWN:
+        SetFocus(hwnd);
         if (HIWORD(wParam) == XBUTTON1) LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_X1);
         else if (HIWORD(wParam) == XBUTTON2) LiSendMouseButtonEvent(BUTTON_ACTION_PRESS, BUTTON_X2);
         return true;
+
     case WM_XBUTTONUP:
         if (HIWORD(wParam) == XBUTTON1) LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_X1);
         else if (HIWORD(wParam) == XBUTTON2) LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_X2);
         return true;
 
     case WM_MOUSEMOVE:
-        if (g_MouseCaptured) {
+        {
+            if (g_SyntheticRecenter) {
+                g_SyntheticRecenter = false;
+                return true;
+            }
+
             POINT pt;
             GetCursorPos(&pt);
-            short dx = (short)(pt.x - g_LastCursorPos.x);
-            short dy = (short)(pt.y - g_LastCursorPos.y);
 
-            if (dx != 0 || dy != 0) {
-                LiSendMouseMoveEvent(dx, dy);
+            if (g_MouseCaptured) {
+                short dx = (short)(pt.x - g_LastCursorPos.x);
+                short dy = (short)(pt.y - g_LastCursorPos.y);
+                g_LastCursorPos = pt;
 
-                // Reset cursor to window center to prevent hitting screen edges
+                if (dx != 0 || dy != 0) {
+                    LiSendMouseMoveEvent(dx, dy);
+                }
+
                 RECT rc;
                 GetClientRect(hwnd, &rc);
                 POINT center = { (rc.right - rc.left) / 2, (rc.bottom - rc.top) / 2 };
                 ClientToScreen(hwnd, &center);
-                SetCursorPos(center.x, center.y);
-                g_LastCursorPos = center;
-            }
-        } else {
-            RECT rc;
-            GetClientRect(hwnd, &rc);
-            int width = rc.right - rc.left;
-            int height = rc.bottom - rc.top;
-            if (width > 0 && height > 0) {
-                short x = (short)LOWORD(lParam);
-                short y = (short)HIWORD(lParam);
-                LiSendMousePositionEvent(x, y, (short)width, (short)height);
+
+                // Recenter cursor when drifting from window center
+                if (abs(pt.x - center.x) > 50 || abs(pt.y - center.y) > 50) {
+                    g_SyntheticRecenter = true;
+                    g_LastCursorPos = center;
+                    SetCursorPos(center.x, center.y);
+                }
+            } else {
+                g_LastCursorPos = pt;
+                RECT rc;
+                GetClientRect(hwnd, &rc);
+                int width = rc.right - rc.left;
+                int height = rc.bottom - rc.top;
+                if (width > 0 && height > 0) {
+                    short x = (short)LOWORD(lParam);
+                    short y = (short)HIWORD(lParam);
+                    LiSendMousePositionEvent(x, y, (short)width, (short)height);
+                }
             }
         }
         return true;
@@ -159,6 +206,11 @@ bool input_handler_process_message(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
         {
+            // Drop auto-repeated key events (bit 30 of lParam is 1 if key was already down)
+            if (lParam & (1 << 30)) {
+                return true;
+            }
+
             // Shortcut: Ctrl + Alt + Shift + Q to quit stream
             if ((wParam == 'Q' || wParam == 'q') &&
                 (GetKeyState(VK_CONTROL) & 0x8000) &&
@@ -178,40 +230,31 @@ bool input_handler_process_message(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM l
                 return true;
             }
 
-            short vkCode = (short)wParam;
-            if (vkCode >= 0 && vkCode < 256) {
-                g_KeysDown[vkCode] = true;
-            }
+            short vk = (short)(wParam & 0xFF);
+            g_KeysDown[vk] = true;
+
             char mod = get_active_modifiers();
-            LiSendKeyboardEvent(vkCode, KEY_ACTION_DOWN, mod);
+            LiSendKeyboardEvent(vk, KEY_ACTION_DOWN, mod);
         }
         return true;
 
     case WM_KEYUP:
     case WM_SYSKEYUP:
         {
-            short vkCode = (short)wParam;
-            if (vkCode >= 0 && vkCode < 256) {
-                g_KeysDown[vkCode] = false;
-            }
+            short vk = (short)(wParam & 0xFF);
+            g_KeysDown[vk] = false;
+
             char mod = get_active_modifiers();
-            LiSendKeyboardEvent(vkCode, KEY_ACTION_UP, mod);
+            LiSendKeyboardEvent(vk, KEY_ACTION_UP, mod);
         }
         return true;
 
     case WM_KILLFOCUS:
         if (g_MouseCaptured) {
             input_handler_set_capture(false);
+        } else {
+            input_handler_release_all_keys();
         }
-        for (int k = 0; k < 256; k++) {
-            if (g_KeysDown[k]) {
-                LiSendKeyboardEvent((short)k, KEY_ACTION_UP, 0);
-                g_KeysDown[k] = false;
-            }
-        }
-        LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_LEFT);
-        LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_RIGHT);
-        LiSendMouseButtonEvent(BUTTON_ACTION_RELEASE, BUTTON_MIDDLE);
         return true;
     }
 
@@ -244,13 +287,12 @@ void input_handler_poll_gamepads(void) {
 
             LiSendControllerEvent(
                 buttonFlags,
-                (unsigned char)state.Gamepad.bLeftTrigger,
-                (unsigned char)state.Gamepad.bRightTrigger,
+                state.Gamepad.bLeftTrigger,
+                state.Gamepad.bRightTrigger,
                 state.Gamepad.sThumbLX,
                 state.Gamepad.sThumbLY,
                 state.Gamepad.sThumbRX,
-                state.Gamepad.sThumbRY
-            );
+                state.Gamepad.sThumbRY);
         }
     }
 }
